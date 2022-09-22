@@ -360,26 +360,19 @@ recover_mag_sgn(StateVars *mag_sgn, uint8_t pos, uint16_t q, int32_t m_n[2], int
                 const uint8_t emb_pat_1[2],
                 int32_t v[2][4], int32_t m[2][4], uint8_t *E, uint32_t *mu_n, const uint8_t *Dcup, uint32_t Pcup,
                 uint32_t pLSB) {
-    int t1, t2;
     for (int i = 0; i < 4; i++) {
         int32_t n = 4 * q + i;
         m_n[pos] = m[pos][i];
         known_1[pos] = (emb_pat_1[pos] >> i) & 1;
         v[pos][i] = jpeg2000_decode_mag_sgn(mag_sgn, m_n[pos], known_1[pos], Dcup, Pcup);
-        t1 = E[n];
-        t2 = mu_n[n];
 
-        E[n] = 32 - ff_clz(v[pos][i] | 1);
-        mu_n[n] = (v[pos][i] >> 1) + 1;
-        mu_n[n] <<= pLSB;
-        mu_n[n] |= ((uint32_t) (v[pos][i] & 1)) << 31; // sign bit.
-
-        if (m_n[pos] == 0) {
-            E[n] = t1;
-            mu_n[n] = t2;
+        if (m_n[pos]!=0) {
+            E[n] = 32 - ff_clz(v[pos][i] | 1);
+            mu_n[n] = (v[pos][i] >> 1) + 1;
+            mu_n[n] <<= pLSB;
+            mu_n[n] |= ((uint32_t) (v[pos][i] & 1)) << 31; // sign bit.
         }
     }
-
 }
 
 /*MEL stream decoding procedure*/
@@ -475,8 +468,7 @@ static av_always_inline void jpeg2000_modify_state(int x1, int x2, int width, in
     block_states[(x1 + 1) * (width + 2) + (x2 + 1)] |= value;
 }
 
-static int av_noinline jpeg2000_decode_ht_cleanup(
-                                                  const Jpeg2000DecoderContext *s, Jpeg2000Cblk *cblk, Jpeg2000T1Context *t1, MelDecoderState *mel_state,
+static int av_noinline jpeg2000_decode_ht_cleanup(const Jpeg2000DecoderContext *s, Jpeg2000Cblk *cblk, Jpeg2000T1Context *t1, MelDecoderState *mel_state,
                                                   StateVars *mel_stream, StateVars *vlc_stream, StateVars *mag_sgn_stream, const uint8_t *Dcup, uint32_t Lcup,
                                                   uint32_t Pcup, uint8_t pLSB, int width, int height, int32_t *sample_buf, uint8_t *block_states) {
     uint16_t q = 0; // Represents current quad position.
@@ -484,26 +476,25 @@ static int av_noinline jpeg2000_decode_ht_cleanup(
     uint16_t context1, context2;
     uint16_t context = 0;
 
-    uint8_t sig_pat[2] = {0};   // significance pattern
-    uint8_t res_off[2] = {0};   // residual offset
+    uint8_t sig_pat[2]   = {0}; // significance pattern
+    uint8_t res_off[2]   = {0}; // residual offset
     uint8_t emb_pat_k[2] = {0}; // Exponent Max Bound pattern K
     uint8_t emb_pat_1[2] = {0}; // Exponent Max Bound pattern 1.
-    uint8_t gamma[2] = {0};
+    uint8_t gamma[2]     = {0};
 
-    uint8_t E_n[2] = {0};
+    uint8_t E_n[2]  = {0};
     uint8_t E_ne[2] = {0};
     uint8_t E_nw[2] = {0};
     uint8_t E_nf[2] = {0};
 
     uint8_t max_e[2] = {0};
-
     uint8_t u_pfx[2] = {0};
     uint8_t u_sfx[2] = {0};
     uint8_t u_ext[2] = {0};
 
-    int32_t u[2] = {0};
-    int32_t U[2] = {0}; // Exponent bound (7.3.7)
-    int32_t m_n[2] = {0};
+    int32_t u[2]       = {0};
+    int32_t U[2]       = {0}; // Exponent bound (7.3.7)
+    int32_t m_n[2]     = {0};
     int32_t known_1[2] = {0};
 
     int32_t m[2][4] = {0};
@@ -558,7 +549,7 @@ static int av_noinline jpeg2000_decode_ht_cleanup(
             sigma_n[4 * q1 + i] = (sig_pat[J2K_Q1] >> i) & 1;
 
         // calculate context
-        context = sigma_n[4 * q1];           // f
+        context  = sigma_n[4 * q1];           // f
         context |= sigma_n[4 * q1 + 1];      // sf
         context += sigma_n[4 * q1 + 2] << 1; // w << 1
         context += sigma_n[4 * q1 + 3] << 2;
@@ -574,7 +565,7 @@ static int av_noinline jpeg2000_decode_ht_cleanup(
             sigma_n[4 * q2 + i] = (sig_pat[J2K_Q2] >> i) & 1;
 
         // calculate context for the next quad
-        context = sigma_n[4 * q2];           // f
+        context  = sigma_n[4 * q2];           // f
         context |= sigma_n[4 * q2 + 1];      // sf
         context += sigma_n[4 * q2 + 2] << 1; // w << 1
         context += sigma_n[4 * q2 + 3] << 2; // sw << 2
@@ -609,13 +600,10 @@ static int av_noinline jpeg2000_decode_ht_cleanup(
                     u_ext[J2K_Q1] = vlc_decode_u_extension(vlc_stream, u_sfx[J2K_Q1], vlc_buf);
                 } else {
                     u_pfx[J2K_Q2] = vlc_decode_u_prefix(vlc_stream, vlc_buf);
-
                     u_sfx[J2K_Q1] = vlc_decode_u_suffix(vlc_stream, u_pfx[J2K_Q1], vlc_buf);
                     u_sfx[J2K_Q2] = vlc_decode_u_suffix(vlc_stream, u_pfx[J2K_Q2], vlc_buf);
-
                     u_ext[J2K_Q1] = vlc_decode_u_extension(vlc_stream, u_sfx[J2K_Q1], vlc_buf);
                     u_ext[J2K_Q2] = vlc_decode_u_extension(vlc_stream, u_sfx[J2K_Q2], vlc_buf);
-
                     u[J2K_Q2] = u_pfx[J2K_Q2] + u_sfx[J2K_Q2] + (u_ext[J2K_Q2] * 4);
                 }
                 // clause 7.3.6 (3)
@@ -624,13 +612,9 @@ static int av_noinline jpeg2000_decode_ht_cleanup(
 
         } else if (res_off[J2K_Q1] == 1 || res_off[J2K_Q2] == 1) {
             uint8_t pos = res_off[J2K_Q1] == 1 ? 0 : 1;
-
             u_pfx[pos] = vlc_decode_u_prefix(vlc_stream, vlc_buf);
-
             u_sfx[pos] = vlc_decode_u_suffix(vlc_stream, u_pfx[pos], vlc_buf);
-
             u_ext[pos] = vlc_decode_u_extension(vlc_stream, u_sfx[pos], vlc_buf);
-
             u[pos] = u_pfx[pos] + u_sfx[pos] + (u_ext[pos] * 4);
         }
         U[J2K_Q1] = kappa[J2K_Q1] + u[J2K_Q1];
@@ -722,7 +706,7 @@ static int av_noinline jpeg2000_decode_ht_cleanup(
             for (int i = 0; i < 4; i++)
                 sigma_n[4 * q1 + i] = (sig_pat[J2K_Q1] >> i) & 1;
 
-            context2 = sigma_n[4 * (q2 - quad_width) + 1];
+            context2  = sigma_n[4 * (q2 - quad_width) + 1];
             context2 += sigma_n[4 * (q2 - quad_width) + 3] << 2;
 
             if (!is_divisible(q2, c)) {
@@ -762,13 +746,9 @@ static int av_noinline jpeg2000_decode_ht_cleanup(
 
             } else if (res_off[J2K_Q1] == 1 || res_off[J2K_Q2] == 1) {
                 uint8_t pos = res_off[J2K_Q1] == 1 ? 0 : 1;
-
                 u_pfx[pos] = vlc_decode_u_prefix(vlc_stream, vlc_buf);
-
                 u_sfx[pos] = vlc_decode_u_suffix(vlc_stream, u_pfx[pos], vlc_buf);
-
                 u_ext[pos] = vlc_decode_u_extension(vlc_stream, u_sfx[pos], vlc_buf);
-
                 u[pos] = u_pfx[pos] + u_sfx[pos] + (u_ext[pos] << 2);
             }
             sp = sig_pat[J2K_Q1];
@@ -988,17 +968,6 @@ jpeg2000_process_stripes_block(StateVars *sig_prop, int i_s, int j_s, int width,
             jpeg2000_modify_state(i, j, stride - 2, modify_state, block_states);
         }
     }
-
-    for (int j = 0; j < j_s + width; j++) {
-        for (int i = 0; i < i_s + height; i++) {
-            sp = &sample_buf[j + (i * (stride - 2))];
-            cond = (*sp & (1 << pLSB)) != 0;
-            bit = jpeg2000_peek_bit(sig_prop, magref_segment, magref_length);
-            *sp = (*sp & (0x7FFFFFFF | (!cond << 31)));
-            *sp |= (bit * cond) << 31;
-            sig_prop->bits -= cond;
-        }
-    }
 }
 
 static void av_noinline
@@ -1104,7 +1073,7 @@ int decode_htj2k(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *codsty, J
     uint8_t *Dcup; // Byte of an HT cleanup segment.
     uint8_t *Dref; // Byte of an HT refinement segment.
 
-    int z_blk; // Number of ht coding pass
+    int z_blk;     // Number of ht coding pass
 
     uint8_t empty_passes;
 
