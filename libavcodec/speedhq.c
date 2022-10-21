@@ -38,9 +38,9 @@
 #include "idctdsp.h"
 #include "libavutil/thread.h"
 #include "mathops.h"
-#include "mpeg12dec.h"
 #include "mpeg12data.h"
 #include "mpeg12vlc.h"
+#include "rl.h"
 
 #define MAX_INDEX (64 - 1)
 
@@ -500,6 +500,8 @@ static int speedhq_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 
     if (buf_size < 4 || avctx->width < 8 || avctx->width % 8 != 0)
         return AVERROR_INVALIDDATA;
+    if (buf_size < avctx->width*avctx->height / 64 / 4)
+        return AVERROR_INVALIDDATA;
 
     quality = buf[0];
     if (quality >= 100) {
@@ -665,7 +667,7 @@ static av_cold int speedhq_decode_init(AVCodecContext *avctx)
     if (ret)
         return AVERROR_UNKNOWN;
 
-    ff_blockdsp_init(&s->bdsp, avctx);
+    ff_blockdsp_init(&s->bdsp);
     ff_idctdsp_init(&s->idsp, avctx);
     ff_init_scantable(s->idsp.idct_permutation, &s->intra_scantable, ff_zigzag_direct);
 

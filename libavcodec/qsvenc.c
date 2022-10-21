@@ -553,7 +553,7 @@ static int init_video_param_jpeg(AVCodecContext *avctx, QSVEncContext *q)
     if (!desc)
         return AVERROR_BUG;
 
-    ret = ff_qsv_map_pixfmt(sw_format, &q->param.mfx.FrameInfo.FourCC);
+    ret = ff_qsv_map_pixfmt(sw_format, &q->param.mfx.FrameInfo.FourCC, &q->param.mfx.FrameInfo.Shift);
     if (ret < 0)
         return AVERROR_BUG;
 
@@ -567,7 +567,6 @@ static int init_video_param_jpeg(AVCodecContext *avctx, QSVEncContext *q)
                                             !desc->log2_chroma_w + !desc->log2_chroma_h;
     q->param.mfx.FrameInfo.BitDepthLuma   = desc->comp[0].depth;
     q->param.mfx.FrameInfo.BitDepthChroma = desc->comp[0].depth;
-    q->param.mfx.FrameInfo.Shift          = desc->comp[0].depth > 8;
 
     q->param.mfx.FrameInfo.Width  = FFALIGN(avctx->width, 16);
     q->param.mfx.FrameInfo.Height = FFALIGN(avctx->height, 16);
@@ -639,6 +638,7 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
     q->param.mfx.CodecProfile       = q->profile;
     q->param.mfx.TargetUsage        = avctx->compression_level;
     q->param.mfx.GopPicSize         = FFMAX(0, avctx->gop_size);
+    q->old_gop_size                 = avctx->gop_size;
     q->param.mfx.GopRefDist         = FFMAX(-1, avctx->max_b_frames) + 1;
     q->param.mfx.GopOptFlag         = avctx->flags & AV_CODEC_FLAG_CLOSED_GOP ?
                                       MFX_GOP_CLOSED : MFX_GOP_STRICT;
@@ -652,7 +652,7 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
     if (!desc)
         return AVERROR_BUG;
 
-    ret = ff_qsv_map_pixfmt(sw_format, &q->param.mfx.FrameInfo.FourCC);
+    ret = ff_qsv_map_pixfmt(sw_format, &q->param.mfx.FrameInfo.FourCC, &q->param.mfx.FrameInfo.Shift);
     if (ret < 0)
         return AVERROR_BUG;
 
@@ -666,7 +666,6 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
                                             !desc->log2_chroma_w + !desc->log2_chroma_h;
     q->param.mfx.FrameInfo.BitDepthLuma   = desc->comp[0].depth;
     q->param.mfx.FrameInfo.BitDepthChroma = desc->comp[0].depth;
-    q->param.mfx.FrameInfo.Shift          = desc->comp[0].depth > 8;
 
     // If the minor version is greater than or equal to 19,
     // then can use the same alignment settings as H.264 for HEVC
@@ -704,6 +703,7 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
         q->param.mfx.FrameInfo.FrameRateExtN  = avctx->time_base.den;
         q->param.mfx.FrameInfo.FrameRateExtD  = avctx->time_base.num;
     }
+    q->old_framerate = avctx->framerate;
 
     ret = select_rc_mode(avctx, q);
     if (ret < 0)
@@ -716,6 +716,10 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
     max_bitrate_kbps           = avctx->rc_max_rate / 1000;
     brc_param_multiplier       = (FFMAX(FFMAX3(target_bitrate_kbps, max_bitrate_kbps, buffer_size_in_kilobytes),
                                   initial_delay_in_kilobytes) + 0x10000) / 0x10000;
+    q->old_rc_buffer_size = avctx->rc_buffer_size;
+    q->old_rc_initial_buffer_occupancy = avctx->rc_initial_buffer_occupancy;
+    q->old_bit_rate = avctx->bit_rate;
+    q->old_rc_max_rate = avctx->rc_max_rate;
 
     switch (q->param.mfx.RateControlMethod) {
     case MFX_RATECONTROL_CBR:
@@ -778,6 +782,7 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
 
         q->extco.PicTimingSEI         = q->pic_timing_sei ?
                                         MFX_CODINGOPTION_ON : MFX_CODINGOPTION_UNKNOWN;
+        q->old_pic_timing_sei = q->pic_timing_sei;
 
         if (q->rdo >= 0)
             q->extco.RateDistortionOpt = q->rdo > 0 ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
@@ -827,12 +832,16 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
                 q->extco2.ExtBRC = q->extbrc ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
             if (q->max_frame_size >= 0)
                 q->extco2.MaxFrameSize = q->max_frame_size;
+            q->old_max_frame_size = q->max_frame_size;
             if (q->int_ref_type >= 0)
                 q->extco2.IntRefType = q->int_ref_type;
+            q->old_int_ref_type = q->int_ref_type;
             if (q->int_ref_cycle_size >= 0)
                 q->extco2.IntRefCycleSize = q->int_ref_cycle_size;
+            q->old_int_ref_cycle_size = q->int_ref_cycle_size;
             if (q->int_ref_qp_delta != INT16_MIN)
                 q->extco2.IntRefQPDelta = q->int_ref_qp_delta;
+            q->old_int_ref_qp_delta = q->int_ref_qp_delta;
             if (q->max_slice_size >= 0)
                 q->extco2.MaxSliceSize = q->max_slice_size;
             q->extco2.DisableDeblockingIdc = q->dblk_idc;
@@ -856,22 +865,30 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
                 q->extco2.MinQPI = avctx->qmin > 51 ? 51 : avctx->qmin;
                 q->extco2.MinQPP = q->extco2.MinQPB = q->extco2.MinQPI;
             }
+            q->old_qmin = avctx->qmin;
             if (avctx->qmax >= 0) {
                 q->extco2.MaxQPI = avctx->qmax > 51 ? 51 : avctx->qmax;
                 q->extco2.MaxQPP = q->extco2.MaxQPB = q->extco2.MaxQPI;
             }
+            q->old_qmax = avctx->qmax;
             if (q->min_qp_i >= 0)
                 q->extco2.MinQPI = q->min_qp_i > 51 ? 51 : q->min_qp_i;
+            q->old_min_qp_i = q->min_qp_i;
             if (q->max_qp_i >= 0)
                 q->extco2.MaxQPI = q->max_qp_i > 51 ? 51 : q->max_qp_i;
+            q->old_max_qp_i = q->max_qp_i;
             if (q->min_qp_p >= 0)
                 q->extco2.MinQPP = q->min_qp_p > 51 ? 51 : q->min_qp_p;
+            q->old_min_qp_p = q->min_qp_p;
             if (q->max_qp_p >= 0)
                 q->extco2.MaxQPP = q->max_qp_p > 51 ? 51 : q->max_qp_p;
+            q->old_max_qp_p = q->max_qp_p;
             if (q->min_qp_b >= 0)
                 q->extco2.MinQPB = q->min_qp_b > 51 ? 51 : q->min_qp_b;
+            q->old_min_qp_b = q->min_qp_b;
             if (q->max_qp_b >= 0)
                 q->extco2.MaxQPB = q->max_qp_b > 51 ? 51 : q->max_qp_b;
+            q->old_max_qp_b = q->max_qp_b;
             if (q->mbbrc >= 0)
                 q->extco2.MBBRC = q->mbbrc ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
 
@@ -921,8 +938,10 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
             }
             if (q->int_ref_cycle_dist >= 0)
                 q->extco3.IntRefCycleDist = q->int_ref_cycle_dist;
+            q->old_int_ref_cycle_dist = q->int_ref_cycle_dist;
             if (q->low_delay_brc >= 0)
                 q->extco3.LowDelayBRC = q->low_delay_brc ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+            q->old_low_delay_brc = q->low_delay_brc;
             if (q->max_frame_size_i >= 0)
                 q->extco3.MaxFrameSizeI = q->max_frame_size_i;
             if (q->max_frame_size_p >= 0)
@@ -1495,6 +1514,64 @@ static int get_free_frame(QSVEncContext *q, QSVFrame **f)
     return 0;
 }
 
+static int qsvenc_fill_padding_area(AVFrame *frame, int new_w, int new_h)
+{
+    const AVPixFmtDescriptor *desc;
+    int max_step[4], filled[4] = { 0 };
+
+    desc = av_pix_fmt_desc_get(frame->format);
+    av_assert0(desc);
+    av_image_fill_max_pixsteps(max_step, NULL, desc);
+
+    for (int i = 0; i < desc->nb_components; i++) {
+        const AVComponentDescriptor *comp = &desc->comp[i];
+        int sheight, dheight, plane = comp->plane;
+        ptrdiff_t swidth = av_image_get_linesize(frame->format,
+                                                 frame->width,
+                                                 plane);
+        ptrdiff_t dwidth = av_image_get_linesize(frame->format,
+                                                 new_w,
+                                                 plane);
+
+        if (swidth < 0 || dwidth < 0) {
+            av_log(NULL, AV_LOG_ERROR, "av_image_get_linesize failed\n");
+            return AVERROR(EINVAL);
+        }
+
+        if (filled[plane])
+            continue;
+
+        sheight = frame->height;
+        dheight = new_h;
+
+        if (plane) {
+            sheight = AV_CEIL_RSHIFT(frame->height, desc->log2_chroma_h);
+            dheight = AV_CEIL_RSHIFT(new_h, desc->log2_chroma_h);
+        }
+
+        // Fill right padding
+        if (new_w > frame->width) {
+            for (int j = 0; j < sheight; j++) {
+                void *line_ptr = frame->data[plane] + j * frame->linesize[plane] + swidth;
+
+                av_memcpy_backptr(line_ptr,
+                                  max_step[plane],
+                                  new_w - frame->width);
+            }
+        }
+
+        // Fill bottom padding
+        for (int j = sheight; j < dheight; j++)
+            memcpy(frame->data[plane] + j * frame->linesize[plane],
+                   frame->data[plane] + (sheight - 1) * frame->linesize[plane],
+                   dwidth);
+
+        filled[plane] = 1;
+    }
+
+    return 0;
+}
+
 static int submit_frame(QSVEncContext *q, const AVFrame *frame,
                         QSVFrame **new_frame)
 {
@@ -1524,8 +1601,9 @@ static int submit_frame(QSVEncContext *q, const AVFrame *frame,
         /* and to make allocation continious for data[0]/data[1] */
          if ((frame->height & 31 || frame->linesize[0] & (q->width_align - 1)) ||
             (frame->data[1] - frame->data[0] != frame->linesize[0] * FFALIGN(qf->frame->height, q->height_align))) {
-            qf->frame->height = FFALIGN(frame->height, q->height_align);
-            qf->frame->width  = FFALIGN(frame->width, q->width_align);
+            int tmp_w, tmp_h;
+            qf->frame->height = tmp_h = FFALIGN(frame->height, q->height_align);
+            qf->frame->width  = tmp_w = FFALIGN(frame->width, q->width_align);
 
             qf->frame->format = frame->format;
 
@@ -1539,6 +1617,12 @@ static int submit_frame(QSVEncContext *q, const AVFrame *frame,
             qf->frame->width  = frame->width;
 
             ret = av_frame_copy(qf->frame, frame);
+            if (ret < 0) {
+                av_frame_unref(qf->frame);
+                return ret;
+            }
+
+            ret = qsvenc_fill_padding_area(qf->frame, tmp_w, tmp_h);
             if (ret < 0) {
                 av_frame_unref(qf->frame);
                 return ret;
@@ -1678,15 +1762,247 @@ static int update_qp(AVCodecContext *avctx, QSVEncContext *q)
     return updated;
 }
 
+static int update_max_frame_size(AVCodecContext *avctx, QSVEncContext *q)
+{
+    int updated = 0;
+
+    if (avctx->codec_id != AV_CODEC_ID_H264 && avctx->codec_id != AV_CODEC_ID_HEVC)
+        return 0;
+
+    UPDATE_PARAM(q->old_max_frame_size, q->max_frame_size);
+    if (!updated)
+        return 0;
+
+    q->extco2.MaxFrameSize  = FFMAX(0, q->max_frame_size);
+    av_log(avctx, AV_LOG_DEBUG,
+           "Reset MaxFrameSize: %d;\n", q->extco2.MaxFrameSize);
+
+    return updated;
+}
+
+static int update_gop_size(AVCodecContext *avctx, QSVEncContext *q)
+{
+    int updated = 0;
+    UPDATE_PARAM(q->old_gop_size, avctx->gop_size);
+    if (!updated)
+        return 0;
+
+    q->param.mfx.GopPicSize = FFMAX(0, avctx->gop_size);
+    av_log(avctx, AV_LOG_DEBUG, "reset GopPicSize to %d\n",
+           q->param.mfx.GopPicSize);
+
+    return updated;
+}
+
+static int update_rir(AVCodecContext *avctx, QSVEncContext *q)
+{
+    int updated = 0;
+
+    if (avctx->codec_id != AV_CODEC_ID_H264 && avctx->codec_id != AV_CODEC_ID_HEVC)
+        return 0;
+
+    UPDATE_PARAM(q->old_int_ref_type, q->int_ref_type);
+    UPDATE_PARAM(q->old_int_ref_cycle_size, q->int_ref_cycle_size);
+    UPDATE_PARAM(q->old_int_ref_qp_delta, q->int_ref_qp_delta);
+    UPDATE_PARAM(q->old_int_ref_cycle_dist, q->int_ref_cycle_dist);
+    if (!updated)
+        return 0;
+
+    q->extco2.IntRefType      = FFMAX(0, q->int_ref_type);
+    q->extco2.IntRefCycleSize = FFMAX(0, q->int_ref_cycle_size);
+    q->extco2.IntRefQPDelta   =
+        q->int_ref_qp_delta != INT16_MIN ? q->int_ref_qp_delta : 0;
+    q->extco3.IntRefCycleDist = FFMAX(0, q->int_ref_cycle_dist);
+    av_log(avctx, AV_LOG_DEBUG,
+           "Reset IntRefType: %d; IntRefCycleSize: %d; "
+           "IntRefQPDelta: %d; IntRefCycleDist: %d\n",
+           q->extco2.IntRefType, q->extco2.IntRefCycleSize,
+           q->extco2.IntRefQPDelta, q->extco3.IntRefCycleDist);
+
+    return updated;
+}
+
+static int update_min_max_qp(AVCodecContext *avctx, QSVEncContext *q)
+{
+    int updated = 0;
+
+    if (avctx->codec_id != AV_CODEC_ID_H264)
+        return 0;
+
+    UPDATE_PARAM(q->old_qmin, avctx->qmin);
+    UPDATE_PARAM(q->old_qmax, avctx->qmax);
+    UPDATE_PARAM(q->old_min_qp_i, q->min_qp_i);
+    UPDATE_PARAM(q->old_max_qp_i, q->max_qp_i);
+    UPDATE_PARAM(q->old_min_qp_p, q->min_qp_p);
+    UPDATE_PARAM(q->old_max_qp_p, q->max_qp_p);
+    UPDATE_PARAM(q->old_min_qp_b, q->min_qp_b);
+    UPDATE_PARAM(q->old_max_qp_b, q->max_qp_b);
+    if (!updated)
+        return 0;
+
+    if ((avctx->qmin >= 0 && avctx->qmax >= 0 && avctx->qmin > avctx->qmax) ||
+        (q->max_qp_i >= 0 && q->min_qp_i >= 0 && q->min_qp_i > q->max_qp_i) ||
+        (q->max_qp_p >= 0 && q->min_qp_p >= 0 && q->min_qp_p > q->max_qp_p) ||
+        (q->max_qp_b >= 0 && q->min_qp_b >= 0 && q->min_qp_b > q->max_qp_b)) {
+        av_log(avctx, AV_LOG_ERROR,
+                "qmin and or qmax are set but invalid,"
+                " please make sure min <= max\n");
+        return AVERROR(EINVAL);
+    }
+
+    q->extco2.MinQPI = 0;
+    q->extco2.MaxQPI = 0;
+    q->extco2.MinQPP = 0;
+    q->extco2.MaxQPP = 0;
+    q->extco2.MinQPB = 0;
+    q->extco2.MaxQPB = 0;
+    if (avctx->qmin >= 0) {
+        q->extco2.MinQPI = avctx->qmin > 51 ? 51 : avctx->qmin;
+        q->extco2.MinQPB = q->extco2.MinQPP = q->extco2.MinQPI;
+    }
+    if (avctx->qmax >= 0) {
+        q->extco2.MaxQPI = avctx->qmax > 51 ? 51 : avctx->qmax;
+        q->extco2.MaxQPB = q->extco2.MaxQPP = q->extco2.MaxQPI;
+    }
+    if (q->min_qp_i >= 0)
+        q->extco2.MinQPI = q->min_qp_i > 51 ? 51 : q->min_qp_i;
+    if (q->max_qp_i >= 0)
+        q->extco2.MaxQPI = q->max_qp_i > 51 ? 51 : q->max_qp_i;
+    if (q->min_qp_p >= 0)
+        q->extco2.MinQPP = q->min_qp_p > 51 ? 51 : q->min_qp_p;
+    if (q->max_qp_p >= 0)
+        q->extco2.MaxQPP = q->max_qp_p > 51 ? 51 : q->max_qp_p;
+    if (q->min_qp_b >= 0)
+        q->extco2.MinQPB = q->min_qp_b > 51 ? 51 : q->min_qp_b;
+    if (q->max_qp_b >= 0)
+        q->extco2.MaxQPB = q->max_qp_b > 51 ? 51 : q->max_qp_b;
+
+    av_log(avctx, AV_LOG_VERBOSE, "Reset MinQPI: %d; MaxQPI: %d; "
+        "MinQPP: %d; MaxQPP: %d; "
+        "MinQPB: %d; MaxQPB: %d\n",
+        q->extco2.MinQPI, q->extco2.MaxQPI,
+        q->extco2.MinQPP, q->extco2.MaxQPP,
+        q->extco2.MinQPB, q->extco2.MaxQPB);
+
+    return updated;
+}
+
+static int update_low_delay_brc(AVCodecContext *avctx, QSVEncContext *q)
+{
+    int updated = 0;
+
+    if (avctx->codec_id != AV_CODEC_ID_H264 && avctx->codec_id != AV_CODEC_ID_HEVC)
+        return 0;
+
+    UPDATE_PARAM(q->old_low_delay_brc, q->low_delay_brc);
+    if (!updated)
+        return 0;
+
+    q->extco3.LowDelayBRC = MFX_CODINGOPTION_UNKNOWN;
+    if (q->low_delay_brc >= 0)
+        q->extco3.LowDelayBRC = q->low_delay_brc ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+    av_log(avctx, AV_LOG_DEBUG, "Reset LowDelayBRC: %s\n",
+           print_threestate(q->extco3.LowDelayBRC));
+
+    return updated;
+}
+
+static int update_frame_rate(AVCodecContext *avctx, QSVEncContext *q)
+{
+    int updated = 0;
+
+    UPDATE_PARAM(q->old_framerate.num, avctx->framerate.num);
+    UPDATE_PARAM(q->old_framerate.den, avctx->framerate.den);
+    if (!updated)
+        return 0;
+
+    if (avctx->framerate.den > 0 && avctx->framerate.num > 0) {
+        q->param.mfx.FrameInfo.FrameRateExtN = avctx->framerate.num;
+        q->param.mfx.FrameInfo.FrameRateExtD = avctx->framerate.den;
+    } else {
+        q->param.mfx.FrameInfo.FrameRateExtN = avctx->time_base.den;
+        q->param.mfx.FrameInfo.FrameRateExtD = avctx->time_base.num;
+    }
+    av_log(avctx, AV_LOG_DEBUG, "Reset framerate: %d/%d (%.2f fps).\n",
+           q->param.mfx.FrameInfo.FrameRateExtN,
+           q->param.mfx.FrameInfo.FrameRateExtD,
+           (double)q->param.mfx.FrameInfo.FrameRateExtN / q->param.mfx.FrameInfo.FrameRateExtD);
+
+    return updated;
+}
+
+static int update_bitrate(AVCodecContext *avctx, QSVEncContext *q)
+{
+    int updated = 0;
+    int target_bitrate_kbps, max_bitrate_kbps, brc_param_multiplier;
+    int buffer_size_in_kilobytes, initial_delay_in_kilobytes;
+
+    UPDATE_PARAM(q->old_rc_buffer_size, avctx->rc_buffer_size);
+    UPDATE_PARAM(q->old_rc_initial_buffer_occupancy, avctx->rc_initial_buffer_occupancy);
+    UPDATE_PARAM(q->old_bit_rate, avctx->bit_rate);
+    UPDATE_PARAM(q->old_rc_max_rate, avctx->rc_max_rate);
+    if (!updated)
+        return 0;
+
+    buffer_size_in_kilobytes   = avctx->rc_buffer_size / 8000;
+    initial_delay_in_kilobytes = avctx->rc_initial_buffer_occupancy / 8000;
+    target_bitrate_kbps        = avctx->bit_rate / 1000;
+    max_bitrate_kbps           = avctx->rc_max_rate / 1000;
+    brc_param_multiplier       = (FFMAX(FFMAX3(target_bitrate_kbps, max_bitrate_kbps, buffer_size_in_kilobytes),
+                                    initial_delay_in_kilobytes) + 0x10000) / 0x10000;
+
+    q->param.mfx.BufferSizeInKB = buffer_size_in_kilobytes / brc_param_multiplier;
+    q->param.mfx.InitialDelayInKB = initial_delay_in_kilobytes / brc_param_multiplier;
+    q->param.mfx.TargetKbps = target_bitrate_kbps / brc_param_multiplier;
+    q->param.mfx.MaxKbps = max_bitrate_kbps / brc_param_multiplier;
+    q->param.mfx.BRCParamMultiplier = brc_param_multiplier;
+    av_log(avctx, AV_LOG_VERBOSE,
+            "Reset BufferSizeInKB: %d; InitialDelayInKB: %d; "
+            "TargetKbps: %d; MaxKbps: %d; BRCParamMultiplier: %d\n",
+            q->param.mfx.BufferSizeInKB, q->param.mfx.InitialDelayInKB,
+            q->param.mfx.TargetKbps, q->param.mfx.MaxKbps, q->param.mfx.BRCParamMultiplier);
+    return updated;
+}
+
+static int update_pic_timing_sei(AVCodecContext *avctx, QSVEncContext *q)
+{
+    int updated = 0;
+
+    if (avctx->codec_id != AV_CODEC_ID_H264 && avctx->codec_id != AV_CODEC_ID_HEVC)
+        return 0;
+
+    UPDATE_PARAM(q->old_pic_timing_sei, q->pic_timing_sei);
+    if (!updated)
+        return 0;
+
+    q->extco.PicTimingSEI = q->pic_timing_sei ?
+                            MFX_CODINGOPTION_ON : MFX_CODINGOPTION_UNKNOWN;
+    av_log(avctx, AV_LOG_DEBUG, "Reset PicTimingSEI: %s\n",
+           print_threestate(q->extco.PicTimingSEI));
+
+    return updated;
+}
+
 static int update_parameters(AVCodecContext *avctx, QSVEncContext *q,
                              const AVFrame *frame)
 {
     int needReset = 0, ret = 0;
 
-    if (!frame)
+    if (!frame || avctx->codec_id == AV_CODEC_ID_MJPEG)
         return 0;
 
     needReset = update_qp(avctx, q);
+    needReset |= update_max_frame_size(avctx, q);
+    needReset |= update_gop_size(avctx, q);
+    needReset |= update_rir(avctx, q);
+    needReset |= update_low_delay_brc(avctx, q);
+    needReset |= update_frame_rate(avctx, q);
+    needReset |= update_bitrate(avctx, q);
+    needReset |= update_pic_timing_sei(avctx, q);
+    ret = update_min_max_qp(avctx, q);
+    if (ret < 0)
+        return ret;
+    needReset |= ret;
     if (!needReset)
         return 0;
 
