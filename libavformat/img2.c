@@ -73,6 +73,7 @@ const IdStrMap ff_img_tags[] = {
     { AV_CODEC_ID_SVG,        "svg"      },
     { AV_CODEC_ID_SVG,        "svgz"     },
     { AV_CODEC_ID_JPEG2000,   "j2c"      },
+    { AV_CODEC_ID_JPEG2000,   "jph"      },
     { AV_CODEC_ID_JPEG2000,   "jp2"      },
     { AV_CODEC_ID_JPEG2000,   "jpc"      },
     { AV_CODEC_ID_JPEG2000,   "j2k"      },

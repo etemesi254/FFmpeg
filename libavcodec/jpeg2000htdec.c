@@ -1170,11 +1170,11 @@ int decode_htj2k(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *codsty, J
         < 0)
         goto free;
 
-    if (cblk->npasses > 1)
+    if (0 &&cblk->npasses > 1)
         jpeg2000_decode_sigprop(cblk, width, height, Dref, Lref,
                                 pLSB - 1, sample_buf, block_states);
 
-    if (cblk->npasses > 2)
+    if (0&& cblk->npasses > 2)
         if ((ret = jpeg2000_decode_magref(cblk, width, height, Dref, Lref,
                                           pLSB - 1, sample_buf, block_states))
             < 0)
