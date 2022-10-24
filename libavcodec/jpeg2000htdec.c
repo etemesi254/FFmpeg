@@ -696,7 +696,7 @@ static int av_noinline jpeg2000_decode_ht_cleanup(
      * so we error out early in case that's the case.
      */
 
-    c = 1 + UINT64_C(0xffffffffffffffff) / quad_width;
+    c = 1 + (UINT64_C(0xffffffffffffffff) / quad_width);
 
     for (int row = 1; row < quad_height; row++) {
         while ((q - (row * quad_width)) < quad_width - 1 && q < (quad_height * quad_width)) {
