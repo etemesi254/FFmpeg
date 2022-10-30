@@ -112,7 +112,10 @@ static int jpeg2000_bitbuf_refill_backwards(StateVars *buffer,
 
     position -= 4;
     mask = (UINT64_C(1) << (FFMIN(4, buffer->pos)) * 8) - 1;
-    tmp = (array[position + 1] << 24) | (array[position + 2] << 16) | (array[position + 3] << 8) | array[position + 4];
+    tmp =  array[position + 1] * (1ull << 24);
+    tmp |= array[position + 2] << 16;
+    tmp |= array[position + 3] << 8;
+    tmp |= array[position + 4];
     tmp &= mask;
 
     // Branchlessly unstuff  bits
