@@ -2,6 +2,7 @@
  * JPEG 2000 image decoder
  * Copyright (c) 2007 Kamil Nowosad
  * Copyright (c) 2013 Nicolas Bertrand <nicoinattendu@gmail.com>
+ * Copyright (c) 2022 Caleb Etemesi <etemesicaleb@gmail.com>
  *
  * This file is part of FFmpeg.
  *
@@ -20,14 +21,12 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "bytestream.h"
-#include "decode.h"
-#include "jpeg2000.h"
-#include "jpeg2000dsp.h"
-
-
 #ifndef AVCODEC_JPEG2000DEC_H
 #define AVCODEC_JPEG2000DEC_H
+
+#include "bytestream.h"
+#include "jpeg2000.h"
+#include "jpeg2000dsp.h"
 
 #define JP2_SIG_TYPE    0x6A502020
 #define JP2_SIG_VALUE   0x0D0A870A
@@ -122,7 +121,8 @@ typedef struct Jpeg2000DecoderContext {
 
     /*options parameters*/
     int             reduction_factor;
-    /* HTJ2K images*/
-    int             is_htj2k;
+    /*HTJ2K params*/
+    uint8_t         is_htj2k;
 } Jpeg2000DecoderContext;
-#endif
+
+#endif //AVCODEC_JPEG2000DEC_H

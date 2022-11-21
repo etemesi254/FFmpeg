@@ -149,9 +149,6 @@ typedef struct OptionsContext {
     AudioChannelMap *audio_channel_maps; /* one info entry per -map_channel */
     int           nb_audio_channel_maps; /* number of (valid) -map_channel settings */
 #endif
-    int metadata_global_manual;
-    int metadata_streams_manual;
-    int metadata_chapters_manual;
     const char **attachments;
     int       nb_attachments;
 
@@ -441,13 +438,12 @@ typedef struct InputFile {
     int eof_reached;      /* true if eof reached */
     int eagain;           /* true if last read attempt returned EAGAIN */
     int ist_index;        /* index of first stream in input_streams */
-    int loop;             /* set number of times input stream should be looped */
-    int64_t duration;     /* actual duration of the longest stream in a file
-                             at the moment when looping happens */
-    AVRational time_base; /* time base of the duration */
     int64_t input_ts_offset;
     int input_sync_ref;
-
+    /**
+     * Effective format start time based on enabled streams.
+     */
+    int64_t start_time_effective;
     int64_t ts_offset;
     /**
      * Extra timestamp offset added by discontinuity handling.
@@ -458,15 +454,9 @@ typedef struct InputFile {
     int64_t recording_time;
     int nb_streams;       /* number of stream that ffmpeg is aware of; may be different
                              from ctx.nb_streams if new streams appear during av_read_frame() */
-    int nb_streams_warn;  /* number of streams that the user was warned of */
     int rate_emu;
     float readrate;
     int accurate_seek;
-
-    AVThreadMessageQueue *in_thread_queue;
-    pthread_t thread;           /* thread reading from this file */
-    int non_blocking;           /* reading packets from the thread should not block */
-    int thread_queue_size;      /* maximum number of queued packets */
 
     /* when looping the input file, this queue is used by decoders to report
      * the last frame duration back to the demuxer thread */
@@ -518,7 +508,6 @@ typedef struct OutputStream {
     AVRational enc_timebase;
 
     AVCodecContext *enc_ctx;
-    int64_t max_frames;
     AVFrame *filtered_frame;
     AVFrame *last_frame;
     AVFrame *sq_frame;
@@ -685,9 +674,10 @@ extern HWDevice *filter_hw_device;
 extern unsigned nb_output_dumped;
 extern int main_return_code;
 
-extern int input_stream_potentially_available;
 extern int ignore_unknown_streams;
 extern int copy_unknown_streams;
+
+extern int recast_media;
 
 #if FFMPEG_OPT_PSNR
 extern int do_psnr;
@@ -703,7 +693,7 @@ void assert_avoptions(AVDictionary *m);
 
 void assert_file_overwrite(const char *filename);
 char *file_read(const char *filename);
-AVDictionary *strip_specifiers(AVDictionary *dict);
+AVDictionary *strip_specifiers(const AVDictionary *dict);
 const AVCodec *find_codec_or_die(const char *name, enum AVMediaType type, int encoder);
 int parse_and_set_vsync(const char *arg, int *vsync_var, int file_idx, int st_idx, int is_global);
 
@@ -737,7 +727,7 @@ int hwaccel_decode_init(AVCodecContext *avctx);
  */
 int of_stream_init(OutputFile *of, OutputStream *ost);
 int of_write_trailer(OutputFile *of);
-int of_open(OptionsContext *o, const char *filename);
+int of_open(const OptionsContext *o, const char *filename);
 void of_close(OutputFile **pof);
 
 /*
@@ -756,6 +746,9 @@ int64_t of_filesize(OutputFile *of);
 AVChapter * const *
 of_get_chapters(OutputFile *of, unsigned int *nb_chapters);
 
+int ifile_open(const OptionsContext *o, const char *filename);
+void ifile_close(InputFile **f);
+
 /**
  * Get next input packet from the demuxer.
  *
@@ -767,8 +760,6 @@ of_get_chapters(OutputFile *of, unsigned int *nb_chapters);
  * - a negative error code on failure
  */
 int ifile_get_packet(InputFile *f, AVPacket **pkt);
-int init_input_threads(void);
-void free_input_threads(void);
 
 #define SPECIFIER_OPT_FMT_str  "%s"
 #define SPECIFIER_OPT_FMT_i    "%i"
