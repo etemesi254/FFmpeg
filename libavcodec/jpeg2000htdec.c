@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Caleb Etemesi<etemesicaleb@gmail.com>
+ * Copyright (c) 2022 Caleb Etemesi <etemesicaleb@gmail.com>
  *
  * This file is part of FFmpeg.
  *
@@ -42,11 +42,11 @@ static const uint16_t dec_CxtVLC_table1[1024];
 static const uint16_t dec_CxtVLC_table0[1024];
 
 typedef struct StateVars {
-    int32_t  pos;
+    int32_t pos;
     uint32_t bits;
     uint32_t tmp;
     uint32_t last;
-    uint8_t  bits_left;
+    uint8_t bits_left;
     uint64_t bit_buf;
 } StateVars;
 
@@ -59,13 +59,15 @@ typedef struct MelDecoderState {
 /**
  *  Given a precomputed c, checks whether n % d == 0
  */
-static av_always_inline uint32_t is_divisible(uint32_t n, uint64_t c) {
+static av_always_inline uint32_t is_divisible(uint32_t n, uint64_t c)
+{
     return n * c <= c - 1;
 }
 
 /* Initializers */
 
-static void jpeg2000_init_zero(StateVars *s) {
+static void jpeg2000_init_zero(StateVars *s)
+{
     s->bits_left = 0;
     s->bit_buf   = 0;
     s->tmp       = 0;
@@ -74,12 +76,14 @@ static void jpeg2000_init_zero(StateVars *s) {
     s->last      = 0;
 }
 
-static void jpeg2000_init_mel(StateVars *s, uint32_t Pcup) {
+static void jpeg2000_init_mel(StateVars *s, uint32_t Pcup)
+{
     jpeg2000_init_zero(s);
     s->pos = Pcup;
 }
 
-static void jpeg2000_init_mag_ref(StateVars *s, uint32_t Lref) {
+static void jpeg2000_init_mag_ref(StateVars *s, uint32_t Lref)
+{
     s->pos       = Lref - 2;
     s->bits      = 0;
     s->last      = 0xFF;
@@ -88,7 +92,8 @@ static void jpeg2000_init_mag_ref(StateVars *s, uint32_t Lref) {
     s->bit_buf   = 0;
 }
 
-static void jpeg2000_init_mel_decoder(MelDecoderState *mel_state) {
+static void jpeg2000_init_mel_decoder(MelDecoderState *mel_state)
+{
     mel_state->k   = 0;
     mel_state->run = 0;
     mel_state->one = 0;
@@ -102,9 +107,10 @@ static void jpeg2000_init_mel_decoder(MelDecoderState *mel_state) {
  * LSBs are all 1's if the last consumed byte was larger than 0x8F
  */
 static int jpeg2000_bitbuf_refill_backwards(StateVars *buffer,
-                                            const uint8_t *array) {
+                                            const uint8_t *array)
+{
     uint64_t tmp = 0;
-    int32_t position  = buffer->pos;
+    int32_t position = buffer->pos;
     uint32_t new_bits = 32;
     uint32_t mask;
 
@@ -133,7 +139,7 @@ static int jpeg2000_bitbuf_refill_backwards(StateVars *buffer,
      */
 
     position -= 4;
-    mask = (UINT64_C(1) << (FFMIN(4, buffer->pos+1)) * 8) - 1;
+    mask = (UINT64_C(1) << (FFMIN(4, buffer->pos + 1)) * 8) - 1;
     tmp  = array[position + 1] * (1ull << 24);
     tmp |= array[position + 2] << 16;
     tmp |= array[position + 3] << 8;
@@ -164,13 +170,13 @@ static int jpeg2000_bitbuf_refill_backwards(StateVars *buffer,
         tmp = (tmp & 0x0000007FFF) + ((tmp & 0xFFFFFF0000) >> 1);
         new_bits--;
     }
-    // remove temporary byte loaded.
+    /* remove temporary byte loaded. */
     tmp >>= 8;
 
-    // Add bits to the MSB of the bit buffer
-    buffer->bit_buf   |= tmp << buffer->bits_left;
+    /* Add bits to the MSB of the bit buffer */
+    buffer->bit_buf |= tmp << buffer->bits_left;
     buffer->bits_left += new_bits;
-    buffer->pos        = FFMAX(0, position);
+    buffer->pos = FFMAX(0, position);
     return 0;
 }
 
@@ -180,16 +186,17 @@ static int jpeg2000_bitbuf_refill_backwards(StateVars *buffer,
  */
 static void jpeg2000_bitbuf_refill_forward(StateVars *buffer,
                                            const uint8_t *array,
-                                           uint32_t length) {
+                                           uint32_t length)
+{
     while (buffer->bits_left < 32) {
         buffer->tmp = 0xFF;
         buffer->bits = (buffer->last == 0xFF) ? 7 : 8;
         if (buffer->pos <= length) {
-            buffer->tmp  = array[buffer->pos];
+            buffer->tmp = array[buffer->pos];
             buffer->pos += 1;
             buffer->last = buffer->tmp;
         }
-        buffer->bit_buf   |= ((uint64_t) buffer->tmp) << buffer->bits_left;
+        buffer->bit_buf |= ((uint64_t) buffer->tmp) << buffer->bits_left;
         buffer->bits_left += buffer->bits;
     }
 }
@@ -201,12 +208,13 @@ static void jpeg2000_bitbuf_refill_forward(StateVars *buffer,
  * @param nbits: Number of bits to remove.
  */
 static av_always_inline void jpeg2000_bitbuf_drop_bits_lsb(StateVars *buf,
-                                                           uint8_t nbits) {
+                                                           uint8_t nbits)
+{
     if (buf->bits_left < nbits) {
         av_log(NULL, AV_LOG_ERROR, "Invalid bit read of %d, bits in buffer are %d\n", nbits, buf->bits_left);
         av_assert0(0);
     }
-    buf->bit_buf  >>= nbits;
+    buf->bit_buf >>= nbits;
     buf->bits_left -= nbits;
 }
 
@@ -217,7 +225,8 @@ static av_always_inline void jpeg2000_bitbuf_drop_bits_lsb(StateVars *buf,
  * In case there are fewer bits, refill from `buf` moving backwards.
  */
 static av_always_inline uint64_t jpeg2000_bitbuf_get_bits_lsb(
-        StateVars *bit_stream, uint8_t nbits, const uint8_t *buf) {
+        StateVars *bit_stream, uint8_t nbits, const uint8_t *buf)
+{
     uint64_t bits;
     uint64_t mask = (1ull << nbits) - 1;
     if (bit_stream->bits_left < nbits)
@@ -234,7 +243,8 @@ static av_always_inline uint64_t jpeg2000_bitbuf_get_bits_lsb(
  * In case there are fewer bits, refill from `buf` moving forward
  */
 static av_always_inline uint64_t jpeg2000_bitbuf_get_bits_lsb_forward(
-        StateVars *bit_stream, uint8_t nbits, const uint8_t *buf, uint32_t length) {
+        StateVars *bit_stream, uint8_t nbits, const uint8_t *buf, uint32_t length)
+{
     uint64_t bits;
     uint64_t mask = (1ull << nbits) - 1;
 
@@ -248,7 +258,8 @@ static av_always_inline uint64_t jpeg2000_bitbuf_get_bits_lsb_forward(
 /**
  * @brief Look ahead bit buffer without discarding bits
  */
-static av_always_inline uint64_t jpeg2000_bitbuf_peek_bits_lsb(StateVars *stream, uint8_t nbits) {
+static av_always_inline uint64_t jpeg2000_bitbuf_peek_bits_lsb(StateVars *stream, uint8_t nbits)
+{
     uint64_t mask = (1ull << nbits) - 1;
     return stream->bit_buf & mask;
 }
@@ -256,7 +267,8 @@ static av_always_inline uint64_t jpeg2000_bitbuf_peek_bits_lsb(StateVars *stream
 /**
  * Variable Length Decoding Routines
  */
-static void jpeg2000_init_vlc(StateVars *s, uint32_t Lcup, uint32_t Pcup, const uint8_t *Dcup) {
+static void jpeg2000_init_vlc(StateVars *s, uint32_t Lcup, uint32_t Pcup, const uint8_t *Dcup)
+{
     s->bits_left = 0;
     s->bit_buf   = 0;
     s->pos       = Lcup - 2 - Pcup;
@@ -281,8 +293,9 @@ static int av_always_inline jpeg2000_decode_ctx_vlc(const Jpeg2000DecoderContext
                                                     uint8_t *emb_pat_1,
                                                     uint8_t pos,
                                                     uint32_t Pcup,
-                                                    uint16_t context) {
-    // Described in clause 7.3.5
+                                                    uint16_t context)
+{
+    /* Described in clause 7.3.5 */
     uint32_t value;
     uint8_t len;
     uint64_t index;
@@ -293,15 +306,15 @@ static int av_always_inline jpeg2000_decode_ctx_vlc(const Jpeg2000DecoderContext
     code_word = vlc_stream->bit_buf & 0x7f;
     index = code_word + (context << 7);
 
-    // decode table has 1024 entries so ensure array access is in bounds
+    /* decode table has 1024 entries so ensure array access is in bounds */
     av_assert0(index < 1024);
 
     value = table[index];
 
     len = (value & 0x000F) >> 1;
 
-    res_off[pos]   = (uint8_t) (value & 1);
-    sig_pat[pos]   = (uint8_t) ((value & 0x00F0) >> 4);
+    res_off[pos] = (uint8_t) (value & 1);
+    sig_pat[pos] = (uint8_t) ((value & 0x00F0) >> 4);
     emb_pat_k[pos] = (uint8_t) ((value & 0x0F00) >> 8);
     emb_pat_1[pos] = (uint8_t) ((value & 0xF000) >> 12);
 
@@ -313,9 +326,11 @@ static int av_always_inline jpeg2000_decode_ctx_vlc(const Jpeg2000DecoderContext
  * @brief Decode variable length u-vlc prefix
  */
 static av_always_inline uint8_t
-vlc_decode_u_prefix(StateVars *vlc_stream, const uint8_t *refill_array) {
-    // clause 7.3.6
-    // procedure : decodeUPrefix.
+vlc_decode_u_prefix(StateVars *vlc_stream, const uint8_t *refill_array)
+{
+    /* clause 7.3.6
+     * procedure : decodeUPrefix.
+     */
     static const uint8_t return_value[8] = {5, 1, 2, 1, 3, 1, 2, 1};
     static const uint8_t drop_bits[8] = {3, 1, 2, 1, 3, 1, 2, 1};
 
@@ -334,9 +349,11 @@ vlc_decode_u_prefix(StateVars *vlc_stream, const uint8_t *refill_array) {
  * @brief Decode variable length u-vlc suffix
  */
 static av_always_inline uint8_t vlc_decode_u_suffix(
-        StateVars *vlc_stream, uint8_t suffix, const uint8_t *refill_array) {
-// clause 7.3.6
-// procedure: decodeUSuffix
+        StateVars *vlc_stream, uint8_t suffix, const uint8_t *refill_array)
+{
+    /* clause 7.3.6
+     * procedure: decodeUSuffix
+     */
     static const int mask[] = {1, 31};
     static const int drop_bits[] = {1, 5};
 
@@ -358,9 +375,11 @@ static av_always_inline uint8_t vlc_decode_u_suffix(
  * @brief Decode variable length u-vlc suffix
  */
 static av_always_inline uint8_t vlc_decode_u_extension(
-        StateVars *vlc_stream, uint8_t suffix, const uint8_t *refill_array) {
-// clause 7.3.6
-// procedure decodeUExtension.
+        StateVars *vlc_stream, uint8_t suffix, const uint8_t *refill_array)
+{
+    /* clause 7.3.6
+     * procedure decodeUExtension.
+     */
     return jpeg2000_bitbuf_get_bits_lsb(vlc_stream, 4 * (suffix >= 28), refill_array);
 }
 
@@ -368,12 +387,14 @@ static av_always_inline uint8_t vlc_decode_u_extension(
  * Magnitude and Sign decode procedures
  */
 static int32_t av_always_inline jpeg2000_decode_mag_sgn(StateVars *mag_sgn_stream, int32_t m_n,
-                                                        int32_t i_n, const uint8_t *buf, uint32_t length) {
-    // clause 7.3.8
-    // procedure: decodeMagSgnValue
+                                                        int32_t i_n, const uint8_t *buf, uint32_t length)
+{
+    /* clause 7.3.8
+     * procedure: decodeMagSgnValue
+     */
     int32_t val = 0;
     if (m_n > 0) {
-        val = jpeg2000_bitbuf_get_bits_lsb_forward(mag_sgn_stream, m_n , buf, length);
+        val = jpeg2000_bitbuf_get_bits_lsb_forward(mag_sgn_stream,m_n,buf,length);
         val += (i_n << m_n);
     }
     return val;
@@ -383,7 +404,8 @@ static av_always_inline void
 recover_mag_sgn(StateVars *mag_sgn, uint8_t pos, uint16_t q, int32_t m_n[2], int32_t known_1[2],
                 const uint8_t emb_pat_1[2],
                 int32_t v[2][4], int32_t m[2][4], uint8_t *E, uint32_t *mu_n, const uint8_t *Dcup, uint32_t Pcup,
-                uint32_t pLSB) {
+                uint32_t pLSB)
+{
     for (int i = 0; i < 4; i++) {
         int32_t n = 4 * q + i;
         m_n[pos] = m[pos][i];
@@ -399,8 +421,8 @@ recover_mag_sgn(StateVars *mag_sgn, uint8_t pos, uint16_t q, int32_t m_n[2], int
     }
 }
 
-/*MEL stream decoding procedure*/
-static int jpeg2000_import_bit(StateVars *stream, const uint8_t *array, uint32_t length) {
+static int jpeg2000_import_bit(StateVars *stream, const uint8_t *array, uint32_t length)
+{
     int cond = stream->pos <= length;
     int pos = FFMIN(stream->pos, length);
     if (stream->bits == 0) {
@@ -412,7 +434,8 @@ static int jpeg2000_import_bit(StateVars *stream, const uint8_t *array, uint32_t
     return (stream->tmp >> stream->bits) & 1;
 }
 
-static int jpeg2000_peek_bit(StateVars *stream, const uint8_t *array, uint32_t length) {
+static int jpeg2000_peek_bit(StateVars *stream, const uint8_t *array, uint32_t length)
+{
     if (stream->bits == 0) {
         int cond = stream->pos <= length;
         int pos = FFMIN(stream->pos, length);
@@ -426,7 +449,8 @@ static int jpeg2000_peek_bit(StateVars *stream, const uint8_t *array, uint32_t l
 static int jpeg2000_decode_mel_sym(MelDecoderState *mel_state,
                                    StateVars *mel_stream,
                                    const uint8_t *Dcup,
-                                   uint32_t Lcup) {
+                                   uint32_t Lcup)
+{
 
     if (mel_state->run == 0 && mel_state->one == 0) {
         uint8_t eval;
@@ -444,7 +468,7 @@ static int jpeg2000_decode_mel_sym(MelDecoderState *mel_state,
                 mel_state->run = (2 * (mel_state->run)) + bit;
                 eval -= 1;
             }
-            mel_state->k = FFMAX(0, mel_state->k -1);
+            mel_state->k = FFMAX(0, mel_state->k - 1);
             mel_state->one = 1;
         }
     }
@@ -457,17 +481,23 @@ static int jpeg2000_decode_mel_sym(MelDecoderState *mel_state,
     }
 }
 
-/** Magref decoding procedures */
-static av_always_inline int jpeg2000_import_magref_bit(StateVars *stream, const uint8_t *array, uint32_t length) {
+/**
+ * @brief Magref decoding procedures
+ */
+static av_always_inline int jpeg2000_import_magref_bit(StateVars *stream, const uint8_t *array, uint32_t length)
+{
     return jpeg2000_bitbuf_get_bits_lsb(stream, 1, array);
 }
 
-/* Signal EMB decode */
+/**
+ * @brief Signal EMB decode
+ */
 static int
 jpeg2000_decode_sig_emb(const Jpeg2000DecoderContext *s, MelDecoderState *mel_state, StateVars *mel_stream,
                         StateVars *vlc_stream, const uint16_t *vlc_table, const uint8_t *Dcup, uint8_t *sig_pat,
                         uint8_t *res_off, uint8_t *emb_pat_k, uint8_t *emb_pat_1, uint8_t pos, uint16_t context,
-                        uint32_t Lcup, uint32_t Pcup) {
+                        uint32_t Lcup, uint32_t Pcup)
+{
     if (context == 0) {
         uint8_t sym;
         sym = jpeg2000_decode_mel_sym(mel_state, mel_stream, Dcup, Lcup);
@@ -484,11 +514,13 @@ jpeg2000_decode_sig_emb(const Jpeg2000DecoderContext *s, MelDecoderState *mel_st
                                    context);
 }
 
-static av_always_inline int jpeg2000_get_state(int x1, int x2, int width, int shift_by, const uint8_t *block_states) {
+static av_always_inline int jpeg2000_get_state(int x1, int x2, int width, int shift_by, const uint8_t *block_states)
+{
     return (block_states[(x1 + 1) * (width + 2) + (x2 + 1)] >> shift_by) & 1;
 }
 
-static av_always_inline void jpeg2000_modify_state(int x1, int x2, int width, int value, uint8_t *block_states) {
+static av_always_inline void jpeg2000_modify_state(int x1, int x2, int width, int value, uint8_t *block_states)
+{
     block_states[(x1 + 1) * (width + 2) + (x2 + 1)] |= value;
 }
 
@@ -498,19 +530,20 @@ jpeg2000_decode_ht_cleanup(const Jpeg2000DecoderContext *s, Jpeg2000Cblk *cblk, 
                            StateVars *mel_stream, StateVars *vlc_stream, StateVars *mag_sgn_stream, const uint8_t *Dcup,
                            uint32_t Lcup,
                            uint32_t Pcup, uint8_t pLSB, int width, int height, int32_t *sample_buf,
-                           uint8_t *block_states) {
-    uint16_t q = 0; // Represents current quad position.
+                           uint8_t *block_states)
+{
+    uint16_t q = 0; /* Represents current quad position. */
     uint16_t q1, q2;
     uint16_t context1, context2;
     uint16_t context = 0;
 
-    uint8_t sig_pat[2] = {0}; // significance pattern
-    uint8_t res_off[2] = {0}; // residual offset
-    uint8_t emb_pat_k[2] = {0}; // Exponent Max Bound pattern K
-    uint8_t emb_pat_1[2] = {0}; // Exponent Max Bound pattern 1.
-    uint8_t gamma[2] = {0};
+    uint8_t sig_pat[2]   = {0}; /* significance pattern*/
+    uint8_t res_off[2]   = {0}; /* residual offset*/
+    uint8_t emb_pat_k[2] = {0}; /* Exponent Max Bound pattern K */
+    uint8_t emb_pat_1[2] = {0}; /* Exponent Max Bound pattern 1.*/
+    uint8_t gamma[2]     = {0};
 
-    uint8_t E_n[2] = {0};
+    uint8_t E_n[2]  = {0};
     uint8_t E_ne[2] = {0};
     uint8_t E_nw[2] = {0};
     uint8_t E_nf[2] = {0};
@@ -520,9 +553,9 @@ jpeg2000_decode_ht_cleanup(const Jpeg2000DecoderContext *s, Jpeg2000Cblk *cblk, 
     uint8_t u_sfx[2] = {0};
     uint8_t u_ext[2] = {0};
 
-    int32_t u[2] = {0};
-    int32_t U[2] = {0}; // Exponent bound (7.3.7)
-    int32_t m_n[2] = {0};
+    int32_t u[2]       = {0};
+    int32_t U[2]       = {0}; /* Exponent bound (7.3.7) */
+    int32_t m_n[2]     = {0};
     int32_t known_1[2] = {0};
 
     int32_t m[2][4] = {0};
@@ -539,7 +572,7 @@ jpeg2000_decode_ht_cleanup(const Jpeg2000DecoderContext *s, Jpeg2000Cblk *cblk, 
     uint32_t *mu;
 
     const uint8_t *vlc_buf = Dcup + Pcup;
-    // convert to raster-scan
+    /* convert to raster-scan */
     const uint16_t is_border_x = width % 2;
     const uint16_t is_border_y = height % 2;
 
@@ -694,9 +727,9 @@ jpeg2000_decode_ht_cleanup(const Jpeg2000DecoderContext *s, Jpeg2000Cblk *cblk, 
         recover_mag_sgn(mag_sgn_stream, J2K_Q1, q1, m_n, known_1, emb_pat_1, v, m,
                         E, mu_n, Dcup, Pcup, pLSB);
 
-        q++; // move to next quad pair
+        q++; /* move to next quad pair */
     }
-    // initial line pair end.
+    /* initial line pair end. */
 
     /*
      * As an optimization, we can replace modulo operations with
@@ -774,9 +807,11 @@ jpeg2000_decode_ht_cleanup(const Jpeg2000DecoderContext *s, Jpeg2000Cblk *cblk, 
 
             } else if (res_off[J2K_Q1] == 1 || res_off[J2K_Q2] == 1) {
                 uint8_t pos = res_off[J2K_Q1] == 1 ? 0 : 1;
+
                 u_pfx[pos] = vlc_decode_u_prefix(vlc_stream, vlc_buf);
                 u_sfx[pos] = vlc_decode_u_suffix(vlc_stream, u_pfx[pos], vlc_buf);
                 u_ext[pos] = vlc_decode_u_extension(vlc_stream, u_sfx[pos], vlc_buf);
+
                 u[pos] = u_pfx[pos] + u_sfx[pos] + (u_ext[pos] << 2);
             }
             sp = sig_pat[J2K_Q1];
@@ -825,18 +860,18 @@ jpeg2000_decode_ht_cleanup(const Jpeg2000DecoderContext *s, Jpeg2000Cblk *cblk, 
             recover_mag_sgn(mag_sgn_stream, J2K_Q2, q2, m_n, known_1, emb_pat_1, v, m,
                             E, mu_n, Dcup, Pcup, pLSB);
 
-            // move to the next quad pair
+            /* move to the next quad pair */
             q += 2;
         }
         if (quad_width % 2 == 1) {
             q1 = q;
-            // calculate context for current quad
-            context1 = sigma_n[4 * (q1 - quad_width) + 1];         // n
-            context1 += (sigma_n[4 * (q1 - quad_width) + 3] << 2); // ne
+            /* calculate context for current quad */
+            context1 = sigma_n[4 * (q1 - quad_width) + 1];
+            context1 += (sigma_n[4 * (q1 - quad_width) + 3] << 2);
 
             if (!is_divisible(q1, c)) {
-                context1 |= sigma_n[4 * (q1 - quad_width) - 1]; // nw
-                context1 += (sigma_n[4 * q1 - 1] | sigma_n[4 * q1 - 2]) << 1; // (sw| w) << 1;
+                context1 |= sigma_n[4 * (q1 - quad_width) - 1];
+                context1 += (sigma_n[4 * q1 - 1] | sigma_n[4 * q1 - 2]) << 1;
             }
             if (!is_divisible(q1 + 1, c))
                 context1 |= sigma_n[4 * (q1 - quad_width) + 5] << 2;
@@ -853,11 +888,12 @@ jpeg2000_decode_ht_cleanup(const Jpeg2000DecoderContext *s, Jpeg2000Cblk *cblk, 
 
             u[J2K_Q1] = 0;
 
-            // Recover mag_sgn value
+            /* Recover mag_sgn value */
             if (res_off[J2K_Q1] == 1) {
                 u_pfx[J2K_Q1] = vlc_decode_u_prefix(vlc_stream, vlc_buf);
                 u_sfx[J2K_Q1] = vlc_decode_u_suffix(vlc_stream, u_pfx[J2K_Q1], vlc_buf);
                 u_ext[J2K_Q1] = vlc_decode_u_extension(vlc_stream, u_sfx[J2K_Q1], vlc_buf);
+
                 u[J2K_Q1] = u_pfx[J2K_Q1] + u_sfx[J2K_Q1] + (u_ext[J2K_Q1] << 2);
             }
 
@@ -887,7 +923,6 @@ jpeg2000_decode_ht_cleanup(const Jpeg2000DecoderContext *s, Jpeg2000Cblk *cblk, 
 
             recover_mag_sgn(mag_sgn_stream, J2K_Q1, q1, m_n, known_1, emb_pat_1, v, m,
                             E, mu_n, Dcup, Pcup, pLSB);
-            // move to the next quad
             q += 1;
         }
     }
@@ -897,32 +932,32 @@ jpeg2000_decode_ht_cleanup(const Jpeg2000DecoderContext *s, Jpeg2000Cblk *cblk, 
             j1 = 2 * y;
             j2 = 2 * x;
 
-            sample_buf[j2 + (j1 * width)] = (int32_t) *mu;
+            sample_buf[j2 + (j1 * width)] = (int32_t)*mu;
             jpeg2000_modify_state(j1, j2, width, *sigma, block_states);
             sigma += 1;
             mu += 1;
 
             x1 = y != quad_height - 1 || is_border_y == 0;
-            sample_buf[j2 + ((j1 + 1) * width)] = ((int32_t) *mu) * x1;
+            sample_buf[j2 + ((j1 + 1) * width)] = ((int32_t)*mu) * x1;
             jpeg2000_modify_state(j1 + 1, j2, width, (*sigma) * x1, block_states);
             sigma += 1;
             mu += 1;
 
             x2 = x != quad_width - 1 || is_border_x == 0;
-            sample_buf[(j2 + 1) + (j1 * width)] = ((int32_t) *mu) * x2;
+            sample_buf[(j2 + 1) + (j1 * width)] = ((int32_t)*mu) * x2;
             jpeg2000_modify_state(j1, j2 + 1, width, (*sigma) * x2, block_states);
             sigma += 1;
             mu += 1;
 
             x3 = x1 | x2;
-            sample_buf[(j2 + 1) + (j1 + 1) * width] = ((int32_t) *mu) * x3;
+            sample_buf[(j2 + 1) + (j1 + 1) * width] = ((int32_t)*mu) * x3;
             jpeg2000_modify_state(j1 + 1, j2 + 1, width, (*sigma) * x3, block_states);
             sigma += 1;
             mu += 1;
         }
     }
     ret = 1;
-    free:
+free:
     av_freep(&sigma_n);
     av_freep(&E);
     av_freep(&mu_n);
@@ -931,7 +966,8 @@ jpeg2000_decode_ht_cleanup(const Jpeg2000DecoderContext *s, Jpeg2000Cblk *cblk, 
 
 static void
 jpeg2000_calc_mbr(uint8_t *mbr, const uint16_t i, const uint16_t j, const uint32_t mbr_info, uint8_t causal_cond,
-                  uint8_t *block_states, int width) {
+                  uint8_t *block_states, int width)
+{
 
     int local_mbr = 0;
     local_mbr |= jpeg2000_get_state(i - 1, j - 1, width, HT_SHIFT_SIGMA, block_states);
@@ -970,7 +1006,8 @@ jpeg2000_calc_mbr(uint8_t *mbr, const uint16_t i, const uint16_t j, const uint32
 static void
 jpeg2000_process_stripes_block(StateVars *sig_prop, int i_s, int j_s, int width, int height, int stride, int pLSB,
                                int32_t *sample_buf, uint8_t *block_states, uint8_t *magref_segment,
-                               uint32_t magref_length) {
+                               uint32_t magref_length)
+{
     int32_t *sp;
     uint8_t causal_cond = 0;
     uint8_t bit;
@@ -1000,10 +1037,11 @@ jpeg2000_process_stripes_block(StateVars *sig_prop, int i_s, int j_s, int width,
 
 static void av_noinline
 jpeg2000_decode_sigprop(Jpeg2000Cblk *cblk, uint16_t width, uint16_t height, uint8_t *magref_segment,
-                        uint32_t magref_length, uint8_t pLSB, int32_t *sample_buf, uint8_t *block_states) {
-// Described in clause 7.4
-// procedure: decodeSigPropMag
-
+                        uint32_t magref_length, uint8_t pLSB, int32_t *sample_buf, uint8_t *block_states)
+{
+    /* Described in clause 7.4
+     * procedure: decodeSigPropMag
+     */
     StateVars sp_dec;
     const uint16_t num_v_stripe = height / 4;
     const uint16_t num_h_stripe = width / 4;
@@ -1030,7 +1068,7 @@ jpeg2000_decode_sigprop(Jpeg2000Cblk *cblk, uint16_t width, uint16_t height, uin
                                            magref_length);
         i += 4;
     }
-    // decode remaining height stripes
+    /* decode remaining height stripes */
     b_height = height % 4;
     j = 0;
     for (int n2 = 0; n2 < num_h_stripe; n2++) {
@@ -1048,9 +1086,12 @@ jpeg2000_decode_sigprop(Jpeg2000Cblk *cblk, uint16_t width, uint16_t height, uin
 
 static int av_noinline
 jpeg2000_decode_magref(Jpeg2000Cblk *cblk, uint16_t width, uint16_t block_height, uint8_t *magref_segment,
-                       uint32_t magref_length, uint8_t pLSB, int32_t *sample_buf, uint8_t *block_states) {
-    // Described in clause 7.5
-    // procedure: decodeSigPropMag
+                       uint32_t magref_length, uint8_t pLSB, int32_t *sample_buf, uint8_t *block_states)
+{
+    /*
+     * Described in clause 7.5
+     * procedure: decodeSigPropMag
+     */
 
     StateVars mag_ref = {0};
     const uint16_t num_v_stripe = block_height / 4;
@@ -1063,8 +1104,9 @@ jpeg2000_decode_magref(Jpeg2000Cblk *cblk, uint16_t width, uint16_t block_height
     for (int n1 = 0; n1 < num_v_stripe; n1++) {
         for (int j = 0; j < width; j++) {
             for (int i = i_start; i < i_start + height; i++) {
-    // we move column wise, going from one quad to another
-    // see figure 7.
+                /* we move column wise, going from one quad to another
+                * see figure 7.
+                */
                 sp = &sample_buf[j + i * width];
                 if (jpeg2000_get_state(i, j, width, HT_SHIFT_SIGMA, block_states) != 0) {
                     jpeg2000_modify_state(i, j, width, 1 << HT_SHIFT_REF_IND, block_states);
@@ -1089,38 +1131,39 @@ jpeg2000_decode_magref(Jpeg2000Cblk *cblk, uint16_t width, uint16_t block_height
 
 
 int
-decode_htj2k(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *codsty, Jpeg2000T1Context *t1, Jpeg2000Cblk *cblk,
-             int width, int height, int magp, uint8_t roi_shift) {
-    uint8_t p0 = 0; // Number of placeholder passes.
-    uint32_t Lcup;  // Length of HT cleanup segment.
-    uint32_t Lref;  // Length of Refinement segment.
-    uint32_t Scup;  // HT cleanup segment suffix length.
-    uint32_t Pcup;  // HT cleanup segment prefix length.
+ff_jpeg2000_decode_htj2k(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *codsty, Jpeg2000T1Context *t1, Jpeg2000Cblk *cblk,
+                         int width, int height, int magp, uint8_t roi_shift)
+{
+    uint8_t p0 = 0; /* Number of placeholder passes. */
+    uint32_t Lcup;  /* Length of HT cleanup segment. */
+    uint32_t Lref;  /* Length of Refinement segment. */
+    uint32_t Scup;  /* HT cleanup segment suffix length. */
+    uint32_t Pcup;  /* HT cleanup segment prefix length. */
 
-    uint8_t S_blk; // Number of skipped magnitude bitplanes;
+    uint8_t S_blk;  /* Number of skipped magnitude bitplanes; */
     uint8_t pLSB;
 
-    uint8_t *Dcup; // Byte of an HT cleanup segment.
-    uint8_t *Dref; // Byte of an HT refinement segment.
+    uint8_t *Dcup; /* Byte of an HT cleanup segment. */
+    uint8_t *Dref; /* Byte of an HT refinement segment. */
 
-    int z_blk;     // Number of ht coding pass
+    int z_blk;     /* Number of ht coding pass */
 
     uint8_t empty_passes;
 
-    StateVars mag_sgn;  // Magnitude and Sign
-    StateVars mel;      // Adaptive run-length coding
-    StateVars vlc;      // Variable Length coding
-    StateVars sig_prop; // Significance propagation
+    StateVars mag_sgn;  /* Magnitude and Sign */
+    StateVars mel;      /* Adaptive run-length coding */
+    StateVars vlc;      /* Variable Length coding */
+    StateVars sig_prop; /* Significance propagation */
 
     MelDecoderState mel_state;
 
     int ret;
 
-    // Temporary buffers
+    /* Temporary buffers */
     int32_t *sample_buf;
     uint8_t *block_states;
 
-    // Post-processing
+    /* Post-processing */
     int32_t n, val;
 
     int32_t M_b = magp;
@@ -1135,7 +1178,6 @@ decode_htj2k(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *codsty, Jpeg2
         return 0;
 
     if (cblk->npasses > 3)
-        // Currently use this as a dummy but should be fixed soon
         p0 = 0;
     else if (cblk->length == 0)
         p0 = 1;
@@ -1144,7 +1186,7 @@ decode_htj2k(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *codsty, Jpeg2
     z_blk = cblk->npasses - empty_passes;
 
     if (z_blk <= 0)
-        // no passes within this set, continue
+        /* no passes within this set, continue */
         return 0;
 
     Lcup = cblk->pass_lengths[0];
@@ -1156,8 +1198,8 @@ decode_htj2k(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *codsty, Jpeg2
         return AVERROR_INVALIDDATA;
     }
     Dcup = cblk->data;
-    // Dref comes after the refinement segment.
-    Dref = cblk->data + Lcup;
+    /* Dref comes after the refinement segment. */
+    Dref  = cblk->data + Lcup;
     S_blk = p0 + cblk->zbp;
 
     pLSB = 30 - S_blk;
@@ -1172,17 +1214,17 @@ decode_htj2k(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *codsty, Jpeg2
     }
     Pcup = Lcup - Scup;
 
-    // modDcup shall be done before the creation of vlc instance.
+    /* modDcup shall be done before the creation of vlc instance. */
     Dcup[Lcup - 1] = 0xFF;
     Dcup[Lcup - 2] |= 0x0F;
-    // Magnitude and refinement
+    /* Magnitude and refinement */
     jpeg2000_init_zero(&mag_sgn);
     jpeg2000_bitbuf_refill_forward(&mag_sgn, Dcup, Pcup);
-    // Significance propagation
+    /* Significance propagation */
     jpeg2000_init_zero(&sig_prop);
-    // Adaptive run length
+    /* Adaptive run length */
     jpeg2000_init_mel(&mel, Pcup);
-    // Variable Length coding.
+    /* Variable Length coding. */
     jpeg2000_init_vlc(&vlc, Lcup, Pcup, Dcup);
 
     jpeg2000_init_mel_decoder(&mel_state);
@@ -1211,24 +1253,22 @@ decode_htj2k(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *codsty, Jpeg2
             goto free;
 
     pLSB = 31 - M_b;
-    // Reconstruct the values.
+    /* Reconstruct the values. */
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             n = x + (y * t1->stride);
             val = sample_buf[x + (y * width)];
-            // Convert sign-magnitude to twos complement.
+            /* Convert sign-magnitude to twos complement. */
             val = val >> 31 ? 0x80000000 - val : val;
             val >>= (pLSB - 1);
             t1->data[n] = val;
         }
     }
-    free:
+free:
     av_freep(&sample_buf);
     av_freep(&block_states);
     return ret;
 }
-
-
 
 /**
  * @brief  CtxVLC tables, borrowed from openhtj2k (https://github.com/osamu620/OpenHTJ2K) (credits to Osamu Watanabe)

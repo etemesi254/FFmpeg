@@ -428,7 +428,7 @@ static int get_cox(Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *c)
 
     c->cblk_style = bytestream2_get_byteu(&s->g);
     if (c->cblk_style != 0) { // cblk style
-        if (c->cblk_style & JPEG2000_CTSY_HTJ2K_M || c->cblk_style & JPEG2000_CTSY_HTJ2K_F){
+        if (c->cblk_style & JPEG2000_CTSY_HTJ2K_M || c->cblk_style & JPEG2000_CTSY_HTJ2K_F) {
             av_log(s->avctx,AV_LOG_TRACE,"High Throughput jpeg 2000 codestream.\n");
             s->is_htj2k = 1;
         } else {
@@ -1882,7 +1882,7 @@ static inline void tile_codeblocks(const Jpeg2000DecoderContext *s, Jpeg2000Tile
     for (compno = 0; compno < s->ncomponents; compno++) {
         Jpeg2000Component *comp     = tile->comp + compno;
         Jpeg2000CodingStyle *codsty = tile->codsty + compno;
-        Jpeg2000QuantStyle *quantsty   = tile->qntsty + compno;
+        Jpeg2000QuantStyle *quantsty= tile->qntsty + compno;
 
         int coded = 0;
         int subbandno = 0;
@@ -1893,7 +1893,7 @@ static inline void tile_codeblocks(const Jpeg2000DecoderContext *s, Jpeg2000Tile
         for (reslevelno = 0; reslevelno < codsty->nreslevels2decode; reslevelno++) {
             Jpeg2000ResLevel *rlevel = comp->reslevel + reslevelno;
             /* Loop on bands */
-            for (bandno = 0; bandno < rlevel->nbands; bandno++,subbandno++) {
+            for (bandno = 0; bandno < rlevel->nbands; bandno++, subbandno++) {
                 int nb_precincts, precno;
                 Jpeg2000Band *band = rlevel->band + bandno;
                 int cblkno = 0, bandpos;
@@ -1913,17 +1913,17 @@ static inline void tile_codeblocks(const Jpeg2000DecoderContext *s, Jpeg2000Tile
                     for (cblkno = 0;
                          cblkno < prec->nb_codeblocks_width * prec->nb_codeblocks_height;
                          cblkno++) {
-                        int x, y,ret;
+                        int x, y, ret;
                         // Annex E (Equation E-2) ISO/IEC 15444-1:2019
                         int magp = quantsty->expn[subbandno] + quantsty->nguardbits - 1;
 
                         Jpeg2000Cblk *cblk = prec->cblk + cblkno;
 
                         if (s->is_htj2k)
-                            ret = decode_htj2k(s, codsty, &t1, cblk,
-                                               cblk->coord[0][1] - cblk->coord[0][0],
-                                               cblk->coord[1][1] - cblk->coord[1][0],
-                                               magp, comp->roi_shift);
+                            ret = ff_jpeg2000_decode_htj2k(s, codsty, &t1, cblk,
+                                                           cblk->coord[0][1] - cblk->coord[0][0],
+                                                           cblk->coord[1][1] - cblk->coord[1][0],
+                                                           magp, comp->roi_shift);
                         else
                             ret = decode_cblk(s, codsty, &t1, cblk,
                                               cblk->coord[0][1] - cblk->coord[0][0],
