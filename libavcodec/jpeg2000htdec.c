@@ -626,7 +626,7 @@ jpeg2000_decode_ht_cleanup(const Jpeg2000DecoderContext *s, Jpeg2000Cblk *cblk, 
             sigma_n[4 * q2 + i] = (sig_pat[J2K_Q2] >> i) & 1;
 
         // calculate context for the next quad
-        context = sigma_n[4 * q2];           // f
+        context  = sigma_n[4 * q2];           // f
         context |= sigma_n[4 * q2 + 1];      // sf
         context += sigma_n[4 * q2 + 2] << 1; // w << 1
         context += sigma_n[4 * q2 + 3] << 2; // sw << 2
@@ -833,7 +833,6 @@ jpeg2000_decode_ht_cleanup(const Jpeg2000DecoderContext *s, Jpeg2000Cblk *cblk, 
 
             E_ne[J2K_Q1] = E[4 * (q1 - quad_width) + 3];
             E_ne[J2K_Q2] = E[4 * (q2 - quad_width) + 3];
-
 
             E_nw[J2K_Q1] = (!is_divisible(q1, c)) * E[FFMAX((4 * (q1 - quad_width) - 1), 0)];
             E_nw[J2K_Q2] = (!is_divisible(q2, c)) * E[FFMAX((4 * (q2 - quad_width) - 1), 0)];
@@ -1201,8 +1200,7 @@ ff_jpeg2000_decode_htj2k(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *c
     /* Dref comes after the refinement segment. */
     Dref  = cblk->data + Lcup;
     S_blk = p0 + cblk->zbp;
-
-    pLSB = 30 - S_blk;
+    pLSB  = 30 - S_blk;
 
     Scup = (Dcup[Lcup - 1] << 4) + (Dcup[Lcup - 2] & 0x0F);
 
