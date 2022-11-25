@@ -1111,7 +1111,7 @@ static int jpeg2000_decode_packet(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile,
 
                 if (newpasses > 1 && s->is_htj2k) {
                     // Retrieve pass lengths for each pass
-                    int href_passes =  (cblk->npasses + newpasses-1) % 3;
+                    int href_passes =  (cblk->npasses + newpasses - 1) % 3;
                     int segment_passes = newpasses - href_passes;
                     int pass_bound = 2;
                     int eb = 0;
@@ -1120,7 +1120,7 @@ static int jpeg2000_decode_packet(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile,
                         eb++;
                         pass_bound +=pass_bound;
                     }
-                    if ((ret = get_bits(s, llen+ eb + 3)) < 0)
+                    if ((ret = get_bits(s, llen + eb + 3)) < 0)
                         return ret;
                     cblk->pass_lengths[0] = ret;
                     if ((ret = get_bits(s, llen + 3 + extra_bit)) < 0)
